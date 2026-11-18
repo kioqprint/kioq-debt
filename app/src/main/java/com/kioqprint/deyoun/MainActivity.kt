@@ -32,14 +32,15 @@ class MainActivity : ComponentActivity() {
         val debts = loadDebts(seed); val entries = loadEntries()
         setContent { MaterialTheme { DebtApp(debts,entries) { saveDebts(debts); saveEntries(entries) } } }
     }
-    private fun loadDebts(seed: List<Debt>): MutableList<Debt> = try {
-        val a=JSONArray(prefs.getString("debts",null) ?: return seed.toMutableList())
-        MutableList(a.length()) { i -> val o=a.getJSONObject(i); Debt(o.getString("name"),o.getLong("original"),o.getLong("remaining"),o.optString("due"),o.optString("note")) }
-    } catch (_:Exception) { seed.toMutableList() }
+    private fun loadDebts(seed: List<Debt>): MutableList<Debt> {
+        val raw = prefs.getString("debts", null) ?: return seed.toMutableList()
+        return try { val a=JSONArray(raw); MutableList(a.length()) { i -> val o=a.getJSONObject(i); Debt(o.getString("name"),o.getLong("original"),o.getLong("remaining"),o.optString("due"),o.optString("note")) } } catch (_:Exception) { seed.toMutableList() }
+    }
     private fun saveDebts(ds:List<Debt>) { val a=JSONArray(); ds.forEach { d -> a.put(JSONObject().put("name",d.name).put("original",d.original).put("remaining",d.remaining).put("due",d.due).put("note",d.note)) }; prefs.edit().putString("debts",a.toString()).apply() }
-    private fun loadEntries(): MutableList<Entry> = try {
-        val a=JSONArray(prefs.getString("entries",null) ?: return mutableListOf()); MutableList(a.length()) { i -> val o=a.getJSONObject(i); Entry(o.getString("kind"),o.getLong("amount"),o.getString("label"),o.getLong("timestamp")) }
-    } catch (_:Exception) { mutableListOf() }
+    private fun loadEntries(): MutableList<Entry> {
+        val raw = prefs.getString("entries", null) ?: return mutableListOf()
+        return try { val a=JSONArray(raw); MutableList(a.length()) { i -> val o=a.getJSONObject(i); Entry(o.getString("kind"),o.getLong("amount"),o.getString("label"),o.getLong("timestamp")) } } catch (_:Exception) { mutableListOf() }
+    }
     private fun saveEntries(es:List<Entry>) { val a=JSONArray(); es.forEach { e -> a.put(JSONObject().put("kind",e.kind).put("amount",e.amount).put("label",e.label).put("timestamp",e.timestamp)) }; prefs.edit().putString("entries",a.toString()).apply() }
 }
 
