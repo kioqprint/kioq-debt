@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class Debt(val name: String, val original: Long, var remaining: Long, val due: String = "", val note: String = "")
+data class Debt(val name: String, var original: Long, var remaining: Long, val due: String = "", val note: String = "")
 data class Entry(val kind: String, val amount: Long, val label: String, val timestamp: Long = System.currentTimeMillis())
 
 class MainActivity : ComponentActivity() {
@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun DebtApp(debts:MutableList<Debt>, entries:MutableList<Entry>, save:()->Unit) {
-    var tab by remember { mutableStateOf("الرئيسية") }; var amount by remember { mutableStateOf("") }; var label by remember { mutableStateOf("") }; var dialog by remember { mutableStateOf("") }; var refresh by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableStateOf("الرئيسية") }; var amount by remember { mutableStateOf("") }; var label by remember { mutableStateOf("") }; var dialog by remember { mutableStateOf("") }; var refresh by remember { mutableIntStateOf(0) }; var editIndex by remember { mutableIntStateOf(-1) }
     val total=debts.sumOf { it.remaining }; val income=entries.filter { it.kind=="دخل" }.sumOf { it.amount }; val expenses=entries.filter { it.kind=="مصروف" }.sumOf { it.amount }; val paid=entries.filter { it.kind=="سداد" }.sumOf { it.amount }; val available=income-expenses-paid
     val current=debts.firstOrNull { it.original>0 && it.remaining>0 }
     fun add(kind:String,n:Long,desc:String) { if(n>0) { entries.add(Entry(kind,n,desc.ifBlank { kind })); save(); refresh++ } }
@@ -60,12 +60,34 @@ class MainActivity : ComponentActivity() {
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { Button(onClick={dialog="دخل"},modifier=Modifier.weight(1f)){Text("＋ دخل")}; OutlinedButton(onClick={dialog="مصروف"},modifier=Modifier.weight(1f)){Text("− مصروف")} }
                     Text("كل دخل إضافي يسجل فوراً ويزيد المبلغ المتاح للسداد.")
                 }
-                "الديون" -> LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) { itemsIndexed(debts) { i,d -> Card { Column(Modifier.fillMaxWidth().padding(12.dp)) { Text("${i+1}. ${d.name}",style=MaterialTheme.typography.titleMedium); Text("المتبقي: ${d.remaining.money()} دج"); if(d.due.isNotBlank()) Text("موعد: ${d.due}"); if(d.note.isNotBlank()) Text(d.note); if(d.original>0 && d.remaining==0L) Text("✓ مكتمل") } } } }
+                "الديون" -> LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) { itemsIndexed(debts) { i,d -> Card { Column(Modifier.fillMaxWidth().padding(12.dp)) { Text("${i+1}. ${d.name}",style=MaterialTheme.typography.titleMedium); Text("المتبقي: ${d.remaining.money()} دج"); if(d.due.isNotBlank()) Text("موعد: ${d.due}"); if(d.note.isNotBlank()) Text(d.note); if(d.original>0 && d.remaining==0L) Text("✓ مكتمل"); TextButton(onClick={editIndex=i; amount=d.original.toString(); dialog="تعديل دين"}) { Text("تعديل المبلغ") } } } } }
                 else -> LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) { itemsIndexed(entries.reversed()) { _,e -> Card { Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.SpaceBetween) { Column { Text(e.label); Text(e.kind,style=MaterialTheme.typography.bodySmall) }; Text("${if(e.kind=="دخل") "+" else "−"}${e.amount.money()} دج") } } } }
             }
         }
     } }
-    if(dialog.isNotBlank()) AlertDialog(onDismissRequest={dialog=""},title={Text(if(dialog=="سداد") "تسجيل سداد" else "تسجيل $dialog")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) { OutlinedTextField(amount,{amount=it},label={Text("المبلغ بالدينار")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number)); OutlinedTextField(label,{label=it},label={Text("المصدر أو الملاحظة")}); if(dialog=="سداد") Text("الدين الحالي: ${current?.name ?: "لا يوجد"}\nالمتاح: ${available.money()} دج") }},confirmButton={Button(onClick={ val n=amount.toLongOrNull() ?: 0L; if(dialog=="سداد" && current!=null && n>0 && available>0) { val pay=minOf(n,current.remaining,available); current.remaining-=pay; add("سداد",pay,"سداد ${current.name}") } else if(dialog!="سداد" && n>0) add(dialog,n,label); amount=""; label=""; dialog=""; save() }){Text("حفظ")}},dismissButton={TextButton(onClick={dialog=""}){Text("إلغاء")}})
+    if(dialog.isNotBlank()) AlertDialog(
+        onDismissRequest={dialog=""; editIndex=-1},
+        title={Text(if(dialog=="سداد") "تسجيل سداد" else if(dialog=="تعديل دين") "تعديل مبلغ الدين" else "تسجيل $dialog")},
+        text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(amount,{amount=it},label={Text(if(dialog=="تعديل دين") "المبلغ الإجمالي للدين" else "المبلغ بالدينار")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
+            if(dialog!="تعديل دين") OutlinedTextField(label,{label=it},label={Text("المصدر أو الملاحظة")})
+            if(dialog=="سداد") Text("الدين الحالي: ${current?.name ?: "لا يوجد"}\nالمتاح: ${available.money()} دج")
+            if(dialog=="تعديل دين" && editIndex>=0) Text("سيتم الحفاظ على الدفعات السابقة.")
+        }},
+        confirmButton={Button(onClick={
+            val n=amount.toLongOrNull() ?: 0L
+            if(dialog=="تعديل دين" && editIndex>=0 && n>=0) {
+                val d=debts[editIndex]; val paidBefore=d.original-d.remaining
+                d.original=n; d.remaining=(n-paidBefore).coerceAtLeast(0)
+                save(); refresh++
+            } else if(dialog=="سداد" && current!=null && n>0 && available>0) {
+                val pay=minOf(n,current.remaining,available); current.remaining-=pay
+                add("سداد",pay,"سداد ${current.name}")
+            } else if(dialog!="سداد" && n>0) add(dialog,n,label)
+            amount=""; label=""; dialog=""; editIndex=-1; save()
+        }){Text("حفظ")}},
+        dismissButton={TextButton(onClick={dialog=""; editIndex=-1}){Text("إلغاء")}}
+    )
 }
 @Composable fun Summary(title:String,value:Long,modifier:Modifier=Modifier) { Card(modifier) { Column(Modifier.padding(12.dp)) { Text(title); Text("${value.money()} دج",style=MaterialTheme.typography.titleMedium) } } }
 fun Long.money():String="%,d".format(this).replace(',', ' ')
